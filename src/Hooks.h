@@ -243,7 +243,7 @@ namespace Hooks
 				bSuccess = false;
 			}
 
-			const auto SDLMouseYHookAddress = AsAddress(dku::Hook::Assembly::search_pattern<"E8 ?? ?? ?? ?? 0F 28 B4 24 30 02 00 00 0F 28 BC 24 20 02 00 00 44 0F 28 84 24 10 02 00 00">());
+			const auto SDLMouseYHookAddress = AsAddress(dku::Hook::Assembly::search_pattern<"E8 ?? ?? ?? ?? 48 8B 8D F8 00 00 00 48 33 CC E8 ?? ?? ?? ?? 4C 8D 9C 24 40 02 00 00">());
 			if (SDLMouseYHookAddress) {
 				struct Stub : Xbyak::CodeGenerator
 				{

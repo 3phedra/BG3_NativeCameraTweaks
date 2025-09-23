@@ -13,7 +13,7 @@ include(GNUInstallDirs)
 # info
 project(
 	BG3NativeCameraTweaks
-	VERSION 2.4.4
+	VERSION 2.4.5
 	LANGUAGES CXX
 )
 
