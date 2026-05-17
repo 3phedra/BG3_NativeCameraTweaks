@@ -276,9 +276,9 @@ namespace Settings
 								INFO("Config monitoring: Change detected! Updating config...")
 								Load();
 								ImGuiRenderer::RefreshToggleKey();
-								break;
-
-								Sleep(1000);
+								if (attempts > 0) {
+									Sleep(1000);
+								}
 							}
 						}
 					}

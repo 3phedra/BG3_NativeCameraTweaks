@@ -10,6 +10,7 @@
 
 #include <format>
 #include <map>
+#include <cerrno>
 
 namespace ImGuiMenu
 {
@@ -284,7 +285,7 @@ namespace ImGuiMenu
 	// Forward declarations for profile serialization
 	static std::string FormatDouble(double a_val);
 	static std::string FormatBool(bool a_val);
-	static void SaveSettingsToFile(Settings::Main* a_settings);
+	static bool SaveSettingsToFile(Settings::Main* a_settings);
 
 	// Profile System 
 
@@ -898,6 +899,20 @@ namespace ImGuiMenu
 		}
 	}
 
+	 // file save status feedback
+	static std::string s_saveStatusMessage;
+	static bool        s_saveStatusIsError      = false;
+	static float       s_saveStatusTimer        = 0.0f;
+	static bool        s_saveStatusScrollNeeded = false;
+
+	static void SetSaveStatus(std::string_view a_message, bool a_isError)
+	{
+		s_saveStatusMessage      = a_message;
+		s_saveStatusIsError      = a_isError;
+		s_saveStatusTimer        = 4.0f;
+		s_saveStatusScrollNeeded = true;
+	}
+
 	 // Save to file 
 
 	static std::string FormatDouble(double a_val)
@@ -914,150 +929,184 @@ namespace ImGuiMenu
 		return a_val ? "true" : "false";
 	}
 
-	static void SaveSettingsToFile(Settings::Main* a_settings)
+	static bool SaveSettingsToFile(Settings::Main* a_settings)
 	{
-		const auto path = std::filesystem::current_path() / CONFIG_PATH;
+		const auto basePath = std::filesystem::current_path() / CONFIG_PATH;
+		const auto tmpPath  = std::filesystem::current_path() /
+							  (std::string(CONFIG_PATH) + ".tmp");
 
-		std::ofstream file(path, std::ios::trunc);
-		if (!file.is_open()) {
-			ERROR("Failed to open config file for writing: {}", path.string())
-			return;
+		{
+			std::ofstream file(tmpPath, std::ios::trunc);
+			if (!file.is_open()) {
+				const auto err = errno;
+				ERROR("Failed to open config file for writing: {} (errno: {})", tmpPath.string(), err)
+				if (err == EACCES || err == EPERM) {
+					SetSaveStatus("Save failed: no write permission for the NativeMods folder. "
+								  "Is the game installed in a protected directory (e.g. Program Files)?",
+								  true);
+				} else {
+					SetSaveStatus(std::format("Save failed: could not open config file (errno: {})", err), true);
+				}
+				return false;
+			}
+
+			file << "# Native Camera Tweaks Configuration\n";
+			file << "# Saved from in-game menu\n\n";
+
+			file << "[General]\n";
+			file << "UnlockedPitchInitialValue = " << FormatDouble(*a_settings->UnlockedPitchInitialValue) << "\n";
+			file << "UnlockedPitchClampSpeed = " << FormatDouble(*a_settings->UnlockedPitchClampSpeed) << "\n";
+			file << "UnlockedPitchLimitClipping = " << FormatBool(*a_settings->UnlockedPitchLimitClipping) << "\n";
+			file << "UnlockedPitchFloorOffset = " << FormatDouble(*a_settings->UnlockedPitchFloorOffset) << "\n";
+			file << "ResetZoomOnZoneChange = " << FormatBool(*a_settings->ResetZoomOnZoneChange) << "\n";
+			file << "WatchForConfigChanges = " << FormatBool(*a_settings->WatchForConfigChanges) << "\n";
+			file << "ToggleMenuKey = \"" << *a_settings->ToggleMenuKey << "\"\n";
+			file << "EnableDebugMode = " << FormatBool(*a_settings->EnableDebugMode) << "\n";
+			file << "\n";
+
+			file << "[ExplorationPitch]\n";
+			file << "ExplorationUnlockPitch = " << FormatBool(*a_settings->ExplorationUnlockPitch) << "\n";
+			file << "ExplorationKeepTacticalPitchLocked = " << FormatBool(*a_settings->ExplorationKeepTacticalPitchLocked) << "\n";
+			file << "ExplorationUnlockedPitchMin = " << FormatDouble(*a_settings->ExplorationUnlockedPitchMin) << "\n";
+			file << "ExplorationUnlockedPitchMax = " << FormatDouble(*a_settings->ExplorationUnlockedPitchMax) << "\n";
+			file << "ExplorationOverrideLockedPitch = " << FormatBool(*a_settings->ExplorationOverrideLockedPitch) << "\n";
+			file << "ExplorationLockedPitchClose = " << FormatDouble(*a_settings->ExplorationLockedPitchClose) << "\n";
+			file << "ExplorationLockedPitchFar = " << FormatDouble(*a_settings->ExplorationLockedPitchFar) << "\n";
+			file << "ExplorationLockedTacticalPitchClose = " << FormatDouble(*a_settings->ExplorationLockedTacticalPitchClose) << "\n";
+			file << "ExplorationLockedTacticalPitchFar = " << FormatDouble(*a_settings->ExplorationLockedTacticalPitchFar) << "\n";
+			file << "ExplorationLockedAltPitchClose = " << FormatDouble(*a_settings->ExplorationLockedAltPitchClose) << "\n";
+			file << "ExplorationLockedAltPitchFar = " << FormatDouble(*a_settings->ExplorationLockedAltPitchFar) << "\n";
+			file << "\n";
+
+			file << "[ExplorationZoom]\n";
+			file << "ExplorationOverrideZoom = " << FormatBool(*a_settings->ExplorationOverrideZoom) << "\n";
+			file << "ExplorationZoomMin = " << FormatDouble(*a_settings->ExplorationZoomMin) << "\n";
+			file << "ExplorationZoomMax = " << FormatDouble(*a_settings->ExplorationZoomMax) << "\n";
+			file << "ExplorationTacticalZoomMin = " << FormatDouble(*a_settings->ExplorationTacticalZoomMin) << "\n";
+			file << "ExplorationTacticalZoomMax = " << FormatDouble(*a_settings->ExplorationTacticalZoomMax) << "\n";
+			file << "ExplorationAltZoomMin = " << FormatDouble(*a_settings->ExplorationAltZoomMin) << "\n";
+			file << "ExplorationAltZoomMax = " << FormatDouble(*a_settings->ExplorationAltZoomMax) << "\n";
+			file << "\n";
+
+			file << "[ExplorationFOV]\n";
+			file << "ExplorationOverrideFOV = " << FormatBool(*a_settings->ExplorationOverrideFOV) << "\n";
+			file << "ExplorationFOVClose = " << FormatDouble(*a_settings->ExplorationFOVClose) << "\n";
+			file << "ExplorationFOVFar = " << FormatDouble(*a_settings->ExplorationFOVFar) << "\n";
+			file << "ExplorationTacticalFOV = " << FormatDouble(*a_settings->ExplorationTacticalFOV) << "\n";
+			file << "ExplorationAltFOVClose = " << FormatDouble(*a_settings->ExplorationAltFOVClose) << "\n";
+			file << "ExplorationAltFOVFar = " << FormatDouble(*a_settings->ExplorationAltFOVFar) << "\n";
+			file << "\n";
+
+			file << "[ExplorationOffset]\n";
+			file << "ExplorationOverrideOffset = " << FormatBool(*a_settings->ExplorationOverrideOffset) << "\n";
+			file << "ExplorationHorizontalOffsetMult = " << FormatDouble(*a_settings->ExplorationHorizontalOffsetMult) << "\n";
+			file << "ExplorationVerticalOffsetMult = " << FormatDouble(*a_settings->ExplorationVerticalOffsetMult) << "\n";
+			file << "\n";
+
+			file << "[ExplorationCamera]\n";
+			file << "ExplorationAlignBehindOnSwitch = " << FormatBool(*a_settings->ExplorationAlignBehindOnSwitch) << "\n";
+			file << "ExplorationAlignBehindNPC = " << FormatBool(*a_settings->ExplorationAlignBehindNPC) << "\n";
+			file << "ExplorationDisableCameraPan = " << FormatBool(*a_settings->ExplorationDisableCameraPan) << "\n";
+			file << "\n";
+
+			file << "[CombatPitch]\n";
+			file << "CombatUnlockPitch = " << FormatBool(*a_settings->CombatUnlockPitch) << "\n";
+			file << "CombatKeepTacticalPitchLocked = " << FormatBool(*a_settings->CombatKeepTacticalPitchLocked) << "\n";
+			file << "CombatUnlockedPitchMin = " << FormatDouble(*a_settings->CombatUnlockedPitchMin) << "\n";
+			file << "CombatUnlockedPitchMax = " << FormatDouble(*a_settings->CombatUnlockedPitchMax) << "\n";
+			file << "CombatOverrideLockedPitch = " << FormatBool(*a_settings->CombatOverrideLockedPitch) << "\n";
+			file << "CombatLockedPitchClose = " << FormatDouble(*a_settings->CombatLockedPitchClose) << "\n";
+			file << "CombatLockedPitchFar = " << FormatDouble(*a_settings->CombatLockedPitchFar) << "\n";
+			file << "CombatLockedTacticalPitchClose = " << FormatDouble(*a_settings->CombatLockedTacticalPitchClose) << "\n";
+			file << "CombatLockedTacticalPitchFar = " << FormatDouble(*a_settings->CombatLockedTacticalPitchFar) << "\n";
+			file << "CombatLockedAltPitchClose = " << FormatDouble(*a_settings->CombatLockedAltPitchClose) << "\n";
+			file << "CombatLockedAltPitchFar = " << FormatDouble(*a_settings->CombatLockedAltPitchFar) << "\n";
+			file << "\n";
+
+			file << "[CombatZoom]\n";
+			file << "CombatOverrideZoom = " << FormatBool(*a_settings->CombatOverrideZoom) << "\n";
+			file << "CombatZoomMin = " << FormatDouble(*a_settings->CombatZoomMin) << "\n";
+			file << "CombatZoomMax = " << FormatDouble(*a_settings->CombatZoomMax) << "\n";
+			file << "CombatTacticalZoomMin = " << FormatDouble(*a_settings->CombatTacticalZoomMin) << "\n";
+			file << "CombatTacticalZoomMax = " << FormatDouble(*a_settings->CombatTacticalZoomMax) << "\n";
+			file << "CombatAltZoomMin = " << FormatDouble(*a_settings->CombatAltZoomMin) << "\n";
+			file << "CombatAltZoomMax = " << FormatDouble(*a_settings->CombatAltZoomMax) << "\n";
+			file << "\n";
+
+			file << "[CombatFOV]\n";
+			file << "CombatOverrideFOV = " << FormatBool(*a_settings->CombatOverrideFOV) << "\n";
+			file << "CombatFOVClose = " << FormatDouble(*a_settings->CombatFOVClose) << "\n";
+			file << "CombatFOVFar = " << FormatDouble(*a_settings->CombatFOVFar) << "\n";
+			file << "CombatTacticalFOV = " << FormatDouble(*a_settings->CombatTacticalFOV) << "\n";
+			file << "CombatAltFOVClose = " << FormatDouble(*a_settings->CombatAltFOVClose) << "\n";
+			file << "CombatAltFOVFar = " << FormatDouble(*a_settings->CombatAltFOVFar) << "\n";
+			file << "\n";
+
+			file << "[CombatOffset]\n";
+			file << "CombatOverrideOffset = " << FormatBool(*a_settings->CombatOverrideOffset) << "\n";
+			file << "CombatHorizontalOffsetMult = " << FormatDouble(*a_settings->CombatHorizontalOffsetMult) << "\n";
+			file << "CombatVerticalOffsetMult = " << FormatDouble(*a_settings->CombatVerticalOffsetMult) << "\n";
+			file << "\n";
+
+			file << "[CombatCamera]\n";
+			file << "CombatAlignBehindOnSwitch = " << FormatBool(*a_settings->CombatAlignBehindOnSwitch) << "\n";
+			file << "CombatAlignBehindNPC = " << FormatBool(*a_settings->CombatAlignBehindNPC) << "\n";
+			file << "CombatDisableCameraPan = " << FormatBool(*a_settings->CombatDisableCameraPan) << "\n";
+			file << "\n";
+
+			file << "[Mouse]\n";
+			file << "MouseCameraRotationMult = " << FormatDouble(*a_settings->MouseCameraRotationMult) << "\n";
+			file << "MousePitchMult = " << FormatDouble(*a_settings->MousePitchMult) << "\n";
+			file << "MouseZoomMult = " << FormatDouble(*a_settings->MouseZoomMult) << "\n";
+			file << "InvertMousePitch = " << FormatBool(*a_settings->InvertMousePitch) << "\n";
+			file << "\n";
+
+			file << "[Keyboard]\n";
+			file << "KeyboardCameraRotationMult = " << FormatDouble(*a_settings->KeyboardCameraRotationMult) << "\n";
+			file << "\n";
+
+			file << "[Controller]\n";
+			file << "ControllerCameraRotationMult = " << FormatDouble(*a_settings->ControllerCameraRotationMult) << "\n";
+			file << "ControllerPitchMult = " << FormatDouble(*a_settings->ControllerPitchMult) << "\n";
+			file << "ControllerZoomMult = " << FormatDouble(*a_settings->ControllerZoomMult) << "\n";
+			file << "InvertControllerPitch = " << FormatBool(*a_settings->InvertControllerPitch) << "\n";
+			file << "SwapZoomAndPitch = " << FormatBool(*a_settings->SwapZoomAndPitch) << "\n";
+			file << "UseRightStickPressForZoom = " << FormatBool(*a_settings->UseRightStickPressForZoom) << "\n";
+			file << "\n";
+
+			file << "[ControllerDeadzone]\n";
+			file << "OverrideRightStickDeadzone = " << FormatBool(*a_settings->OverrideRightStickDeadzone) << "\n";
+			file << "NewDeadzone = " << FormatDouble(*a_settings->NewDeadzone) << "\n";
+			file << "\n";
+
+			WriteProfilesToFile(file);
+
+			file.close();
+			if (file.fail()) {
+				std::error_code ec;
+				std::filesystem::remove(tmpPath, ec);
+				ERROR("Failed to write config file (stream error): {}", tmpPath.string())
+				SetSaveStatus("Save failed: an error occurred while writing the config file. "
+							  "The disk may be full or the file may be locked.",
+							  true);
+				return false;
+			}
 		}
 
-		file << "# Native Camera Tweaks Configuration\n";
-		file << "# Saved from in-game menu\n\n";
-
-		file << "[General]\n";
-		file << "UnlockedPitchInitialValue = " << FormatDouble(*a_settings->UnlockedPitchInitialValue) << "\n";
-		file << "UnlockedPitchClampSpeed = " << FormatDouble(*a_settings->UnlockedPitchClampSpeed) << "\n";
-		file << "UnlockedPitchLimitClipping = " << FormatBool(*a_settings->UnlockedPitchLimitClipping) << "\n";
-		file << "UnlockedPitchFloorOffset = " << FormatDouble(*a_settings->UnlockedPitchFloorOffset) << "\n";
-		file << "ResetZoomOnZoneChange = " << FormatBool(*a_settings->ResetZoomOnZoneChange) << "\n";
-		file << "WatchForConfigChanges = " << FormatBool(*a_settings->WatchForConfigChanges) << "\n";
-		file << "ToggleMenuKey = \"" << *a_settings->ToggleMenuKey << "\"\n";
-		file << "EnableDebugMode = " << FormatBool(*a_settings->EnableDebugMode) << "\n";
-		file << "\n";
-
-		file << "[ExplorationPitch]\n";
-		file << "ExplorationUnlockPitch = " << FormatBool(*a_settings->ExplorationUnlockPitch) << "\n";
-		file << "ExplorationKeepTacticalPitchLocked = " << FormatBool(*a_settings->ExplorationKeepTacticalPitchLocked) << "\n";
-		file << "ExplorationUnlockedPitchMin = " << FormatDouble(*a_settings->ExplorationUnlockedPitchMin) << "\n";
-		file << "ExplorationUnlockedPitchMax = " << FormatDouble(*a_settings->ExplorationUnlockedPitchMax) << "\n";
-		file << "ExplorationOverrideLockedPitch = " << FormatBool(*a_settings->ExplorationOverrideLockedPitch) << "\n";
-		file << "ExplorationLockedPitchClose = " << FormatDouble(*a_settings->ExplorationLockedPitchClose) << "\n";
-		file << "ExplorationLockedPitchFar = " << FormatDouble(*a_settings->ExplorationLockedPitchFar) << "\n";
-		file << "ExplorationLockedTacticalPitchClose = " << FormatDouble(*a_settings->ExplorationLockedTacticalPitchClose) << "\n";
-		file << "ExplorationLockedTacticalPitchFar = " << FormatDouble(*a_settings->ExplorationLockedTacticalPitchFar) << "\n";
-		file << "ExplorationLockedAltPitchClose = " << FormatDouble(*a_settings->ExplorationLockedAltPitchClose) << "\n";
-		file << "ExplorationLockedAltPitchFar = " << FormatDouble(*a_settings->ExplorationLockedAltPitchFar) << "\n";
-		file << "\n";
-
-		file << "[ExplorationZoom]\n";
-		file << "ExplorationOverrideZoom = " << FormatBool(*a_settings->ExplorationOverrideZoom) << "\n";
-		file << "ExplorationZoomMin = " << FormatDouble(*a_settings->ExplorationZoomMin) << "\n";
-		file << "ExplorationZoomMax = " << FormatDouble(*a_settings->ExplorationZoomMax) << "\n";
-		file << "ExplorationTacticalZoomMin = " << FormatDouble(*a_settings->ExplorationTacticalZoomMin) << "\n";
-		file << "ExplorationTacticalZoomMax = " << FormatDouble(*a_settings->ExplorationTacticalZoomMax) << "\n";
-		file << "ExplorationAltZoomMin = " << FormatDouble(*a_settings->ExplorationAltZoomMin) << "\n";
-		file << "ExplorationAltZoomMax = " << FormatDouble(*a_settings->ExplorationAltZoomMax) << "\n";
-		file << "\n";
-
-		file << "[ExplorationFOV]\n";
-		file << "ExplorationOverrideFOV = " << FormatBool(*a_settings->ExplorationOverrideFOV) << "\n";
-		file << "ExplorationFOVClose = " << FormatDouble(*a_settings->ExplorationFOVClose) << "\n";
-		file << "ExplorationFOVFar = " << FormatDouble(*a_settings->ExplorationFOVFar) << "\n";
-		file << "ExplorationTacticalFOV = " << FormatDouble(*a_settings->ExplorationTacticalFOV) << "\n";
-		file << "ExplorationAltFOVClose = " << FormatDouble(*a_settings->ExplorationAltFOVClose) << "\n";
-		file << "ExplorationAltFOVFar = " << FormatDouble(*a_settings->ExplorationAltFOVFar) << "\n";
-		file << "\n";
-
-		file << "[ExplorationOffset]\n";
-		file << "ExplorationOverrideOffset = " << FormatBool(*a_settings->ExplorationOverrideOffset) << "\n";
-		file << "ExplorationHorizontalOffsetMult = " << FormatDouble(*a_settings->ExplorationHorizontalOffsetMult) << "\n";
-		file << "ExplorationVerticalOffsetMult = " << FormatDouble(*a_settings->ExplorationVerticalOffsetMult) << "\n";
-		file << "\n";
-
-		file << "[ExplorationCamera]\n";
-		file << "ExplorationAlignBehindOnSwitch = " << FormatBool(*a_settings->ExplorationAlignBehindOnSwitch) << "\n";
-		file << "ExplorationAlignBehindNPC = " << FormatBool(*a_settings->ExplorationAlignBehindNPC) << "\n";
-		file << "ExplorationDisableCameraPan = " << FormatBool(*a_settings->ExplorationDisableCameraPan) << "\n";
-		file << "\n";
-
-		file << "[CombatPitch]\n";
-		file << "CombatUnlockPitch = " << FormatBool(*a_settings->CombatUnlockPitch) << "\n";
-		file << "CombatKeepTacticalPitchLocked = " << FormatBool(*a_settings->CombatKeepTacticalPitchLocked) << "\n";
-		file << "CombatUnlockedPitchMin = " << FormatDouble(*a_settings->CombatUnlockedPitchMin) << "\n";
-		file << "CombatUnlockedPitchMax = " << FormatDouble(*a_settings->CombatUnlockedPitchMax) << "\n";
-		file << "CombatOverrideLockedPitch = " << FormatBool(*a_settings->CombatOverrideLockedPitch) << "\n";
-		file << "CombatLockedPitchClose = " << FormatDouble(*a_settings->CombatLockedPitchClose) << "\n";
-		file << "CombatLockedPitchFar = " << FormatDouble(*a_settings->CombatLockedPitchFar) << "\n";
-		file << "CombatLockedTacticalPitchClose = " << FormatDouble(*a_settings->CombatLockedTacticalPitchClose) << "\n";
-		file << "CombatLockedTacticalPitchFar = " << FormatDouble(*a_settings->CombatLockedTacticalPitchFar) << "\n";
-		file << "CombatLockedAltPitchClose = " << FormatDouble(*a_settings->CombatLockedAltPitchClose) << "\n";
-		file << "CombatLockedAltPitchFar = " << FormatDouble(*a_settings->CombatLockedAltPitchFar) << "\n";
-		file << "\n";
-
-		file << "[CombatZoom]\n";
-		file << "CombatOverrideZoom = " << FormatBool(*a_settings->CombatOverrideZoom) << "\n";
-		file << "CombatZoomMin = " << FormatDouble(*a_settings->CombatZoomMin) << "\n";
-		file << "CombatZoomMax = " << FormatDouble(*a_settings->CombatZoomMax) << "\n";
-		file << "CombatTacticalZoomMin = " << FormatDouble(*a_settings->CombatTacticalZoomMin) << "\n";
-		file << "CombatTacticalZoomMax = " << FormatDouble(*a_settings->CombatTacticalZoomMax) << "\n";
-		file << "CombatAltZoomMin = " << FormatDouble(*a_settings->CombatAltZoomMin) << "\n";
-		file << "CombatAltZoomMax = " << FormatDouble(*a_settings->CombatAltZoomMax) << "\n";
-		file << "\n";
-
-		file << "[CombatFOV]\n";
-		file << "CombatOverrideFOV = " << FormatBool(*a_settings->CombatOverrideFOV) << "\n";
-		file << "CombatFOVClose = " << FormatDouble(*a_settings->CombatFOVClose) << "\n";
-		file << "CombatFOVFar = " << FormatDouble(*a_settings->CombatFOVFar) << "\n";
-		file << "CombatTacticalFOV = " << FormatDouble(*a_settings->CombatTacticalFOV) << "\n";
-		file << "CombatAltFOVClose = " << FormatDouble(*a_settings->CombatAltFOVClose) << "\n";
-		file << "CombatAltFOVFar = " << FormatDouble(*a_settings->CombatAltFOVFar) << "\n";
-		file << "\n";
-
-		file << "[CombatOffset]\n";
-		file << "CombatOverrideOffset = " << FormatBool(*a_settings->CombatOverrideOffset) << "\n";
-		file << "CombatHorizontalOffsetMult = " << FormatDouble(*a_settings->CombatHorizontalOffsetMult) << "\n";
-		file << "CombatVerticalOffsetMult = " << FormatDouble(*a_settings->CombatVerticalOffsetMult) << "\n";
-		file << "\n";
-
-		file << "[CombatCamera]\n";
-		file << "CombatAlignBehindOnSwitch = " << FormatBool(*a_settings->CombatAlignBehindOnSwitch) << "\n";
-		file << "CombatAlignBehindNPC = " << FormatBool(*a_settings->CombatAlignBehindNPC) << "\n";
-		file << "CombatDisableCameraPan = " << FormatBool(*a_settings->CombatDisableCameraPan) << "\n";
-		file << "\n";
-
-		file << "[Mouse]\n";
-		file << "MouseCameraRotationMult = " << FormatDouble(*a_settings->MouseCameraRotationMult) << "\n";
-		file << "MousePitchMult = " << FormatDouble(*a_settings->MousePitchMult) << "\n";
-		file << "MouseZoomMult = " << FormatDouble(*a_settings->MouseZoomMult) << "\n";
-		file << "InvertMousePitch = " << FormatBool(*a_settings->InvertMousePitch) << "\n";
-		file << "\n";
-
-		file << "[Keyboard]\n";
-		file << "KeyboardCameraRotationMult = " << FormatDouble(*a_settings->KeyboardCameraRotationMult) << "\n";
-		file << "\n";
-
-		file << "[Controller]\n";
-		file << "ControllerCameraRotationMult = " << FormatDouble(*a_settings->ControllerCameraRotationMult) << "\n";
-		file << "ControllerPitchMult = " << FormatDouble(*a_settings->ControllerPitchMult) << "\n";
-		file << "ControllerZoomMult = " << FormatDouble(*a_settings->ControllerZoomMult) << "\n";
-		file << "InvertControllerPitch = " << FormatBool(*a_settings->InvertControllerPitch) << "\n";
-		file << "SwapZoomAndPitch = " << FormatBool(*a_settings->SwapZoomAndPitch) << "\n";
-		file << "UseRightStickPressForZoom = " << FormatBool(*a_settings->UseRightStickPressForZoom) << "\n";
-		file << "\n";
-
-		file << "[ControllerDeadzone]\n";
-		file << "OverrideRightStickDeadzone = " << FormatBool(*a_settings->OverrideRightStickDeadzone) << "\n";
-		file << "NewDeadzone = " << FormatDouble(*a_settings->NewDeadzone) << "\n";
-		file << "\n";
-
-		WriteProfilesToFile(file);
-
-		file.close();
+		// rename temp file to toml
+		std::error_code ec;
+		std::filesystem::rename(tmpPath, basePath, ec);
+		if (ec) {
+			std::filesystem::remove(tmpPath, ec);
+			ERROR("Failed to rename config temp file: {} -> {}: ({}) {}",
+				  tmpPath.string(), basePath.string(), ec.value(), ec.message())
+			SetSaveStatus(std::format("Save failed: could not finalize the config file ({})", ec.message()), true);
+			return false;
+		}
 
 		INFO("Config saved to file from in-game menu")
+		SetSaveStatus("Settings saved successfully.", false);
+		return true;
 	}
 
 	 // Debug / Memory Explorer 
@@ -1778,12 +1827,34 @@ namespace ImGuiMenu
 			if (ImGui::Button("Reload from File", ImVec2(140, 28))) {
 				settings->Load();
 				LoadProfilesFromFile();
+				s_saveStatusTimer = 0.0f;
 			}
 			if (ImGui::IsItemHovered()) {
 				ImGui::SetTooltip("Reload settings from the TOML config file on disk.");
 			}
 
 			ImGui::PopStyleColor(3);
+
+			// show save status below buttons
+			if (s_saveStatusTimer > 0.0f) {
+				s_saveStatusTimer -= ImGui::GetIO().DeltaTime;
+				if (s_saveStatusTimer <= 0.0f) {
+					s_saveStatusMessage.clear();
+				} else {
+					ImGui::Spacing();
+					if (s_saveStatusIsError) {
+						ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
+					} else {
+						ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.40f, 0.90f, 0.40f, 1.0f));
+					}
+					ImGui::TextWrapped("%s", s_saveStatusMessage.c_str());
+					ImGui::PopStyleColor();
+					if (s_saveStatusScrollNeeded) {
+						ImGui::SetScrollHereY(0.8f);
+						s_saveStatusScrollNeeded = false;
+					}
+				}
+			}
 		}
 
 		if (anyChanged) {
