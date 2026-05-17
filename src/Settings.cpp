@@ -53,9 +53,9 @@ namespace Settings
 			config.Bind(ExplorationHorizontalOffsetMult, 0.f);  // 0
 			config.Bind(ExplorationVerticalOffsetMult, 0.8f);   // 0.8
 
-			config.Bind(ExplorationAlignBehindOnSwitch, true);
+			config.Bind(ExplorationAlignBehindOnSwitch, false);
 			config.Bind(ExplorationAlignBehindNPC, false);
-			config.Bind(ExplorationDisableCameraPan, true);
+			config.Bind(ExplorationDisableCameraPan, false);
 
 
 			config.Bind(CombatUnlockPitch, true);
@@ -89,9 +89,9 @@ namespace Settings
 			config.Bind(CombatHorizontalOffsetMult, 0.f);  // 0
 			config.Bind(CombatVerticalOffsetMult, 0.8f);   // 0.8
 
-			config.Bind(CombatAlignBehindOnSwitch, true);
-			config.Bind(CombatAlignBehindNPC, true);
-			config.Bind(CombatDisableCameraPan, true);
+			config.Bind(CombatAlignBehindOnSwitch, false);
+			config.Bind(CombatAlignBehindNPC, false);
+			config.Bind(CombatDisableCameraPan, false);
 
 			config.Bind(MouseCameraRotationMult, 1.f);
 			config.Bind(MousePitchMult, 0.25f);
